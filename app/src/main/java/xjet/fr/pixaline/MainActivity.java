@@ -14,8 +14,13 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 
@@ -26,20 +31,21 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     protected Camera mCamera;
 
-    SurfaceView mSurfaceView;
-    SurfaceHolder mSurfaceHolder;
+    protected SurfaceView mSurfaceView;
+    protected SurfaceHolder mSurfaceHolder;
 
-    Camera.PictureCallback mJpegCallback;
+    protected Camera.PictureCallback mPictureCallback;
 
-    Camera.PictureCallback rawCallback;
-    Camera.ShutterCallback shutterCallback;
-
+    protected String        mCurrentImageName;
+    protected int           mCapturedFrame = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss");
+        mCurrentImageName = sdf.format(new Date());
 
         mSurfaceView = (SurfaceView) findViewById(R.id.surfaceView);
         mSurfaceHolder = mSurfaceView.getHolder();
@@ -51,18 +57,9 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         // deprecated setting, but required on Android versions prior to 3.0
         mSurfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
 
-        mJpegCallback = new Camera.PictureCallback() {
+        mPictureCallback = new Camera.PictureCallback() {
             public void onPictureTaken(byte[] data, Camera camera) {
-                FileOutputStream outStream = null;
-                try {
-                    // TODO : use external storage
-                    outStream = new FileOutputStream(String.format("/sdcard/%d.jpg", System.currentTimeMillis()));
-                    outStream.write(data);
-                    outStream.close();
-                    Log.d(LOG_TAG, "onPictureTaken - wrote bytes: " + data.length);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                MainActivity.this.saveCurrentPicture(data);
                 Toast.makeText(getApplicationContext(), "Picture Saved", Toast.LENGTH_SHORT).show();
                 refreshCamera();
             }
@@ -94,7 +91,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     public void captureImage(View v) throws IOException {
         //take the picture
-        mCamera.takePicture(null, null, mJpegCallback);
+        mCamera.takePicture(null, null, mPictureCallback);
     }
 
     public void refreshCamera() {
@@ -182,8 +179,36 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         return cameraId;
     }
 
+    // Save given byte to tempt external dir
+    private void saveCurrentPicture(byte[] data){
+
+        mCapturedFrame ++;
+
+        try {
+
+            File imageFile = new File(this.getExternalCacheDir(), mCurrentImageName + mCapturedFrame + ".jpg");
+
+            if(!imageFile.exists()){
+                FileOutputStream output = new FileOutputStream(imageFile);
+                InputStream inputStream = new ByteArrayInputStream(data); ;
+                int bufferSize = 1024;
+                byte[] buffer = new byte[bufferSize];
+                int len;
+                while ((len = inputStream.read(buffer)) != -1) {
+                    output.write(buffer, 0, len);
+                }
+                inputStream.close();
+                output.close();
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+
+        }
+    }
+
     /*********************************************
-     * Impelment SurfaceHolder.Callback
+     * Implement SurfaceHolder.Callback
      *********************************************/
 
     @Override
