@@ -23,7 +23,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
-
+// TODO : http://stackoverflow.com/questions/1817742/how-can-i-capture-a-video-recording-on-android
 @SuppressWarnings("deprecation")
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback{
 
