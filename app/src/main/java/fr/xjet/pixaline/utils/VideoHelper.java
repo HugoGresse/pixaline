@@ -57,6 +57,7 @@ public class VideoHelper {
 
                 // Convert to InputStream;
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                // TODO : add option to change output quality
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bos);
                 byte[] bitmapdata = bos.toByteArray();
 
