@@ -57,7 +57,7 @@ public class VideoHelper {
 
                 // Convert to InputStream;
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 0, bos);
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bos);
                 byte[] bitmapdata = bos.toByteArray();
 
                 FileOutputStream output = new FileOutputStream(imageFile);
