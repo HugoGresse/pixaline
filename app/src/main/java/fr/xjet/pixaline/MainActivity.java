@@ -12,12 +12,10 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.TextureView;
+import android.widget.Toast;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -95,6 +93,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
             Log.d(LOG_TAG, "Stop recording : " + mOutputFile.toString());
             // END_INCLUDE(stop_release_media_recorder)
 
+            processVideoToImage();
         } else {
             // BEGIN_INCLUDE(prepare_start_media_recorder)
 
@@ -173,6 +172,8 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
         profile.videoFrameWidth = optimalSize.width;
         profile.videoFrameHeight = optimalSize.height;
 
+        Log.d(LOG_TAG, "Profil recorder width:"+profile.videoFrameWidth + " height:" +profile.videoFrameHeight);
+
         // likewise for the camera object itself.
         parameters.setPreviewSize(profile.videoFrameWidth, profile.videoFrameHeight);
         mCamera.setParameters(parameters);
@@ -187,7 +188,6 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
         }
 
         mCamera.stopPreview();
-
 
         // BEGIN_INCLUDE (configure_media_recorder)
         mMediaRecorder = new MediaRecorder();
@@ -252,47 +252,23 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
         }
     }
 
-    private int getCameraInformationId(){
-        int cameraId = -1;
-        int numberOfCameras = Camera.getNumberOfCameras();
-        for (int i = 0; i < numberOfCameras; i++) {
-            Camera.CameraInfo info = new Camera.CameraInfo();
-            Camera.getCameraInfo(i, info);
-            if (info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {
-                Log.d(LOG_TAG, "Camera found");
-                cameraId = i;
-                break;
+
+    private void processVideoToImage(){
+
+        Toast.makeText(
+                MainActivity.this,
+                getString(R.string.msg_image_processing_start),
+                Toast.LENGTH_SHORT).show();
+
+        new CalculateFinalImageTask(this, new CalculateFinalImageTask.Listener() {
+            @Override
+            public void onFinish(String path) {
+                Toast.makeText(
+                        MainActivity.this,
+                        getString(R.string.msg_image_processing_done) +  " " + path,
+                        Toast.LENGTH_SHORT).show();
             }
-        }
-        return cameraId;
-    }
-
-    // Save given byte to tempt external dir
-    private void saveCurrentPicture(byte[] data){
-
-        mCapturedFrame ++;
-
-        try {
-
-            File imageFile = new File(this.getExternalCacheDir(), mCurrentImageName + mCapturedFrame + ".jpg");
-
-            if(!imageFile.exists()){
-                FileOutputStream output = new FileOutputStream(imageFile);
-                InputStream inputStream = new ByteArrayInputStream(data); ;
-                int bufferSize = 1024;
-                byte[] buffer = new byte[bufferSize];
-                int len;
-                while ((len = inputStream.read(buffer)) != -1) {
-                    output.write(buffer, 0, len);
-                }
-                inputStream.close();
-                output.close();
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
-
-        }
+        }).execute(mOutputFile.toString());
     }
 
 
