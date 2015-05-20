@@ -1,10 +1,12 @@
 package fr.xjet.pixaline;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
@@ -37,7 +39,6 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
 
     protected MediaRecorder mMediaRecorder;
     protected String        mCurrentImageName;
-    protected int           mCapturedFrame = 0;
     protected File          mOutputFile;
 
     protected boolean mIsRecording = false;
@@ -168,7 +169,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
                 mTextureView.getWidth(), mTextureView.getHeight());
 
         // Use the same size for recording profile.
-        CamcorderProfile profile = CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH);
+        CamcorderProfile profile = CamcorderProfile.get(CamcorderProfile.QUALITY_480P);
         profile.videoFrameWidth = optimalSize.width;
         profile.videoFrameHeight = optimalSize.height;
 
@@ -267,6 +268,14 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
                         MainActivity.this,
                         getString(R.string.msg_image_processing_done) +  " " + path,
                         Toast.LENGTH_SHORT).show();
+
+
+                Intent intent = new Intent();
+                intent.setAction(Intent.ACTION_VIEW);
+                intent.setDataAndType(Uri.parse("file://" + path), "image/*");
+                startActivity(intent);
+
+
             }
         }).execute(mOutputFile.toString());
     }
