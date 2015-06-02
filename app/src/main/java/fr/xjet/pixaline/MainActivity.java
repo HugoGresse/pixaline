@@ -2,7 +2,11 @@ package fr.xjet.pixaline;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
@@ -16,6 +20,7 @@ import android.view.MenuItem;
 import android.view.TextureView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -25,9 +30,10 @@ import java.util.List;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import fr.xjet.pixaline.utils.CameraHelper;
+import fr.xjet.pixaline.utils.VideoHelper;
 
 @SuppressWarnings("deprecation")
-public class MainActivity extends AppCompatActivity implements TextureView.SurfaceTextureListener {
+public class MainActivity extends AppCompatActivity implements TextureView.SurfaceTextureListener, Camera.PreviewCallback {
 
     public static final String LOG_TAG = "MainActivity";
 
@@ -40,6 +46,12 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     protected MediaRecorder mMediaRecorder;
     protected String        mCurrentImageName;
     protected File          mOutputFile;
+
+    protected CalculateFinalImageTask mCalculateImageTask;
+    protected Bitmap                  mOutputImage;
+
+//    private Extractor extractor;
+
 
     protected boolean mIsRecording = false;
 
@@ -81,26 +93,10 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     @OnClick(R.id.previewView)
     public void toggleRecord() {
         if (mIsRecording) {
-            // BEGIN_INCLUDE(stop_release_media_recorder)
-
-            // stop recording and release camera
-            mMediaRecorder.stop();  // stop the recording
-            releaseMediaRecorder(); // release the MediaRecorder object
-            mCamera.lock();         // take camera access back from MediaRecorder
-
-            // inform the user that recording has stopped
             mIsRecording = false;
-            releaseCamera();
             Log.d(LOG_TAG, "Stop recording : " + mOutputFile.toString());
-            // END_INCLUDE(stop_release_media_recorder)
-
-            processVideoToImage();
         } else {
-            // BEGIN_INCLUDE(prepare_start_media_recorder)
-
-            new MediaPrepareTask().execute(null, null, null);
-
-            // END_INCLUDE(prepare_start_media_recorder)
+            mIsRecording = true;
         }
     }
 
@@ -137,6 +133,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
 
             if(preview){
                 mCamera.startPreview();
+                mCamera.setPreviewCallback(this);
             }
         } catch (IOException e) {
             Log.e(LOG_TAG, "Surface texture is unavailable or unsuitable" + e.getMessage());
@@ -248,6 +245,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     private void releaseCamera(){
         if (mCamera != null){
             // release the camera for other applications
+            mCamera.setPreviewCallback(null);
             mCamera.release();
             mCamera = null;
         }
@@ -261,7 +259,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
                 getString(R.string.msg_image_processing_start),
                 Toast.LENGTH_SHORT).show();
 
-        new CalculateFinalImageTask(this, new CalculateFinalImageTask.Listener() {
+        mCalculateImageTask = new CalculateFinalImageTask(this, new CalculateFinalImageTask.Listener() {
             @Override
             public void onFinish(String path) {
                 Toast.makeText(
@@ -277,7 +275,9 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
 
 
             }
-        }).execute(mOutputFile.toString());
+        });
+
+        mCalculateImageTask.execute(mOutputFile.toString());
     }
 
 
@@ -308,6 +308,93 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
 
+    }
+
+
+    /*********************************************
+     * Implement Camera.PreviewCallback
+     *********************************************/
+
+    private int mCurrentLine = 0;
+    protected int mPixelLinePlace = 2; // Will take the pixel at width/2
+    private int mMaxLine = 200;
+    private static int mJpegQuality = 50;
+    private int mCameraWidth;
+    private int mCameraHeight;
+    private int mCameraPreviewFormat;
+
+    @Override
+    public void onPreviewFrame(byte[] bytes, Camera camera) {
+        if(mOutputImage == null){
+            initializeOutputImage(camera, bytes);
+        }
+
+        if(!mIsRecording){
+            return;
+        }
+
+        updateOutputImage(camera, bytes);
+    }
+
+    protected void initializeOutputImage(Camera camera, byte[] bytes){
+        Log.d(LOG_TAG, "initializeOutputImage bytes:" + bytes.length);
+
+
+        Camera.Parameters parameters = camera.getParameters();
+        mCameraWidth = parameters.getPreviewSize().width;
+        mCameraHeight = parameters.getPreviewSize().height;
+
+        YuvImage yuv = new YuvImage(bytes, mCameraPreviewFormat = parameters.getPreviewFormat(), mCameraWidth, mCameraHeight, null);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        yuv.compressToJpeg(new Rect(0, 0, mCameraWidth, mCameraHeight), mJpegQuality, out);
+
+        byte[] bitmapsBytes = out.toByteArray();
+        final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapsBytes, 0, bitmapsBytes.length);
+
+        if(bitmap == null){
+            return;
+        }
+
+        mOutputImage = Bitmap.createBitmap(mMaxLine, bitmap.getHeight(), Bitmap.Config.ARGB_8888);
+        bitmap.recycle();
+    }
+
+    protected void updateOutputImage(Camera camera, byte[] bytes){
+
+        if(mCurrentLine >= mMaxLine){
+            finalizeOutputImage();
+            mIsRecording = false;
+            return;
+        }
+        Log.d(LOG_TAG, "Processing line " + mCurrentLine + " out of " + mMaxLine);
+
+        // Convert byte array yuv to bitmap
+        YuvImage yuv = new YuvImage(bytes, mCameraPreviewFormat, mCameraWidth, mCameraHeight, null);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        yuv.compressToJpeg(new Rect(0, 0, mCameraWidth, mCameraHeight), mJpegQuality, out);
+        byte[] bitmapsBytes = out.toByteArray();
+        final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapsBytes, 0, bitmapsBytes.length);
+
+        if(mCurrentLine == 0){
+            mPixelLinePlace = (int) (float)bitmap.getWidth() / mPixelLinePlace;
+        }
+
+        // Iterate on the pixel line
+        for(int y =0; y < bitmap.getHeight(); y ++){
+            mOutputImage.setPixel(mCurrentLine, y, bitmap.getPixel(mPixelLinePlace, y));
+        }
+        mCurrentLine ++;
+    }
+
+    protected void finalizeOutputImage(){
+        Log.d(LOG_TAG, "finalizeOutputImage");
+        @SuppressLint("SimpleDateFormat")
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss");
+        VideoHelper.saveCurrentPicture(
+                this,
+                mOutputImage,
+                sdf.format(new Date()) + ".jpg");
     }
 
 
