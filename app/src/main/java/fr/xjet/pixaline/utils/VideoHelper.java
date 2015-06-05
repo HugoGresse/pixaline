@@ -8,6 +8,7 @@ import android.util.Log;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,18 +52,40 @@ public class VideoHelper {
                 return null;
             }
 
-            File imageFile = new File(context.getExternalCacheDir(), outputPath);
+            // Convert to InputStream;
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            // TODO : add option to change output quality
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bos);
+            byte[] bitmapdata = bos.toByteArray();
 
-            if(!imageFile.exists()){
+            String newFile =  VideoHelper.saveCurrentPicture(context, bitmapdata, outputPath);
 
-                // Convert to InputStream;
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                // TODO : add option to change output quality
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bos);
-                byte[] bitmapdata = bos.toByteArray();
+            bos.close();
 
-                FileOutputStream output = new FileOutputStream(imageFile);
-                InputStream inputStream = new ByteArrayInputStream(bitmapdata);
+            return newFile;
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return null;
+    }
+
+    /**
+     * Save given bitmap to external temp dir
+     * @param context app context
+     * @param bytes byte array
+     * @param outputPath file name
+     * @return the image path, null if not saved
+     */
+    public static String saveCurrentPicture(Context context, @Nullable byte[] bytes, String outputPath){
+        File imageFile = new File(context.getExternalCacheDir(), outputPath);
+
+        if(!imageFile.exists()){
+            FileOutputStream output;
+            try {
+                output = new FileOutputStream(imageFile);
+                InputStream inputStream = new ByteArrayInputStream(bytes);
                 int bufferSize = 1024;
                 byte[] buffer = new byte[bufferSize];
                 int len;
@@ -72,16 +95,18 @@ public class VideoHelper {
                 inputStream.close();
                 output.close();
                 return imageFile.toString();
-            } else {
-                Log.d(LOG_TAG, "File Already exist");
+
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+                return null;
+            } catch (IOException e) {
+                e.printStackTrace();
+                return null;
             }
-
-        } catch (IOException e) {
-            e.printStackTrace();
+        } else {
+            Log.d(LOG_TAG, "File Already exist");
+            return null;
         }
-
-        return null;
     }
-
 
 }

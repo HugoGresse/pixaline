@@ -3,7 +3,6 @@ package fr.xjet.pixaline;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.graphics.YuvImage;
@@ -33,7 +32,7 @@ import fr.xjet.pixaline.utils.CameraHelper;
 import fr.xjet.pixaline.utils.VideoHelper;
 
 @SuppressWarnings("deprecation")
-public class MainActivity extends AppCompatActivity implements TextureView.SurfaceTextureListener, Camera.PreviewCallback {
+public class MainActivity extends AppCompatActivity implements TextureView.SurfaceTextureListener, Camera.PreviewCallback, ImageRunnable.Listener {
 
     public static final String LOG_TAG = "MainActivity";
 
@@ -50,9 +49,13 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     protected CalculateFinalImageTask mCalculateImageTask;
     protected Bitmap                  mOutputImage;
 
+    protected Thread        mImageThread;
+    protected ImageRunnable mImageRunnable;
+
 //    private Extractor extractor;
 
 
+    protected boolean mInitThread = false;
     protected boolean mIsRecording = false;
 
     @Override
@@ -94,8 +97,10 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
     public void toggleRecord() {
         if (mIsRecording) {
             mIsRecording = false;
+            finalizeOutputImage();
             Log.d(LOG_TAG, "Stop recording : " + mOutputFile.toString());
         } else {
+            mInitThread = true;
             mIsRecording = true;
         }
     }
@@ -315,86 +320,79 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
      * Implement Camera.PreviewCallback
      *********************************************/
 
-    private int mCurrentLine = 0;
-    protected int mPixelLinePlace = 2; // Will take the pixel at width/2
-    private int mMaxLine = 200;
-    private static int mJpegQuality = 50;
-    private int mCameraWidth;
-    private int mCameraHeight;
-    private int mCameraPreviewFormat;
-
     @Override
     public void onPreviewFrame(byte[] bytes, Camera camera) {
-        if(mOutputImage == null){
-            initializeOutputImage(camera, bytes);
+        if(mInitThread){
+            mImageRunnable = new ImageRunnable(camera, bytes, this);
+            mImageThread = new Thread(mImageRunnable);
+            mInitThread = false;
+
+
+            @SuppressLint("SimpleDateFormat")
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss");
+
+
+            Camera.Parameters parameters = camera.getParameters();
+            int mCameraWidth = parameters.getPreviewSize().width;
+            int mCameraHeight = parameters.getPreviewSize().height;
+            int mCameraPreviewFormat = parameters.getPreviewFormat();
+
+            YuvImage yuv = new YuvImage(bytes, mCameraPreviewFormat, mCameraWidth, mCameraHeight, null);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, mCameraWidth, mCameraHeight), 80, out);
+
+            VideoHelper.saveCurrentPicture(
+                    this,
+                    out.toByteArray(),
+                    sdf.format(new Date()) + "-first.jpg");
         }
 
         if(!mIsRecording){
             return;
         }
 
-        updateOutputImage(camera, bytes);
-    }
 
-    protected void initializeOutputImage(Camera camera, byte[] bytes){
-        Log.d(LOG_TAG, "initializeOutputImage bytes:" + bytes.length);
-
-
-        Camera.Parameters parameters = camera.getParameters();
-        mCameraWidth = parameters.getPreviewSize().width;
-        mCameraHeight = parameters.getPreviewSize().height;
-
-        YuvImage yuv = new YuvImage(bytes, mCameraPreviewFormat = parameters.getPreviewFormat(), mCameraWidth, mCameraHeight, null);
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        yuv.compressToJpeg(new Rect(0, 0, mCameraWidth, mCameraHeight), mJpegQuality, out);
-
-        byte[] bitmapsBytes = out.toByteArray();
-        final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapsBytes, 0, bitmapsBytes.length);
-
-        if(bitmap == null){
-            return;
+        if(!mImageThread.isAlive()){
+            mImageThread.start();
         }
 
-        mOutputImage = Bitmap.createBitmap(mMaxLine, bitmap.getHeight(), Bitmap.Config.ARGB_8888);
-        bitmap.recycle();
-    }
-
-    protected void updateOutputImage(Camera camera, byte[] bytes){
-
-        if(mCurrentLine >= mMaxLine){
-            finalizeOutputImage();
-            mIsRecording = false;
-            return;
-        }
-        Log.d(LOG_TAG, "Processing line " + mCurrentLine + " out of " + mMaxLine);
-
-        // Convert byte array yuv to bitmap
-        YuvImage yuv = new YuvImage(bytes, mCameraPreviewFormat, mCameraWidth, mCameraHeight, null);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        yuv.compressToJpeg(new Rect(0, 0, mCameraWidth, mCameraHeight), mJpegQuality, out);
-        byte[] bitmapsBytes = out.toByteArray();
-        final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapsBytes, 0, bitmapsBytes.length);
-
-        if(mCurrentLine == 0){
-            mPixelLinePlace = (int) (float)bitmap.getWidth() / mPixelLinePlace;
-        }
-
-        // Iterate on the pixel line
-        for(int y =0; y < bitmap.getHeight(); y ++){
-            mOutputImage.setPixel(mCurrentLine, y, bitmap.getPixel(mPixelLinePlace, y));
-        }
-        mCurrentLine ++;
+        mImageRunnable.addByteArray(bytes);
     }
 
     protected void finalizeOutputImage(){
         Log.d(LOG_TAG, "finalizeOutputImage");
+
+        mImageRunnable.stop();
+        mImageThread.interrupt();
+
+
+
         @SuppressLint("SimpleDateFormat")
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss");
-        VideoHelper.saveCurrentPicture(
+        String imagePath = VideoHelper.saveCurrentPicture(
                 this,
                 mOutputImage,
                 sdf.format(new Date()) + ".jpg");
+
+        mOutputFile = new File(imagePath);
+
+        Intent intent = new Intent();
+        intent.setAction(Intent.ACTION_VIEW);
+        intent.setDataAndType(Uri.parse("file://" + mOutputFile.toString()), "image/*");
+        startActivity(intent);
+    }
+
+    /*********************************************
+     * Implement ImageRunnable.Listener
+     *********************************************/
+
+
+    @Override
+    public void bitmapUpdated(Bitmap bitmap) {
+        Log.d(LOG_TAG, "bitmapUpdated");
+
+        mOutputImage = bitmap;
+        // Maybe is in another Thread, take care about ui here
     }
 
 
